@@ -701,6 +701,12 @@ function turnosIniciales(){
     c('Servicio - intermedio',    '9-5',  '09:00','17:00','intermedio', ['servicio','rotativo']),
     c('Mediodia largo',           '11-7', '11:00','19:00','intermedio', ['servicio','rotativo'],
       { nota:'En agentes de servicio es la cobertura del mediodia en la Terminal A, que los lunes y los sabados hace siempre la misma persona. En el counter es el turno unico de la Terminal B para los dias de plantilla corta.' }),
+    /* El 2-10, anadido el 23 de septiembre de 2026. Un turno mas de
+       agentes de servicio, con el mismo mecanismo que los otros: no es
+       principal y no esta en la lista de fabrica, asi que el reparto solo
+       lo usa si lo anades a la lista en Ajustes. */
+    c('Servicio - tarde noche', '2-10', '14:00','22:00','tarde', ['servicio'],
+      { horas:8, nota:'De 2 de la tarde a 10 de la noche. Turno de agentes de servicio como los demas: se pone a mano desde la casilla, o entra en el reparto si lo anades a la lista de Ajustes.' }),
     /* --- supervisores --- */
     /* Lo que va antes del guion es lo que se lee en la casilla del horario,
        asi que dice el puesto y no "supervision" para los dos. */
@@ -1155,7 +1161,7 @@ function datosDemo(){
 
   const k = lunesDe(hoyISO());
   return {
-    version: 30,
+    version: 31,
     empresa: 'ANDEL STAR',
     pin: '1234',
     config: {
@@ -2187,7 +2193,20 @@ function migrar(){
     bitacora('El 11-7 de la Terminal B ya solo sale los dias en que trabajan cuatro personas o menos contando a quien hace sombra. ' +
              'Antes salia tambien los domingos con cinco, por el dia libre fijo.');
   }
-  S.version = 30;
+  /* --- v31: el turno 2-10 en agentes de servicio --- */
+  if(!(S.version >= 31)){
+    /* Pedido el 23 de septiembre de 2026. Solo se anade el turno al
+       catalogo: no entra en la lista de prioridad ni cambia ninguna regla,
+       asi que ningun horario ya hecho cambia y no hay nada que rehacer. */
+    if(!(S.turnos || []).some(t => t.corto === '2-10' && (t.equipos || []).indexOf('servicio') >= 0)){
+      S.turnos.push({ id:uid(), nombre:'Servicio - tarde noche', corto:'2-10',
+        inicio:'14:00', fin:'22:00', tipo:'tarde', equipos:['servicio'],
+        activo:true, finReal:null, horas:8, nota:'De 2 de la tarde a 10 de la noche. Turno de agentes de servicio como los demas: se pone a mano desde la casilla, o entra en el reparto si lo anades a la lista de Ajustes.' });
+      bitacora('Nuevo turno de agentes de servicio: 2-10, de 2 de la tarde a 10 de la noche.');
+    }
+    olvidarTodo();
+  }
+  S.version = 31;
 }
 
 function cargar(){
@@ -7537,7 +7556,7 @@ function pantallaAjustes(){
   /* --- turnos --- */
   h += '<div class="card"><h2>Turnos <button class="btn sm" style="margin-left:8px" onclick="editarTurno()">+ Crear</button></h2>' +
        '<p class="muted" style="margin-top:-4px">Cada turno aparece solo en los horarios que le corresponden. ' +
-       'Los turnos sueltos para casos especiales (10-6, 11-7, 12-8) estan aqui y se eligen a mano desde la casilla.</p>' +
+       'Los turnos sueltos para casos especiales (10-6, 11-7, 12-8, 2-10) estan aqui y se eligen a mano desde la casilla.</p>' +
        '<table class="data"><thead><tr><th>Turno</th><th>Horario</th><th>Cuenta como</th><th>Aparece en</th><th>Momento</th><th>Estado</th><th></th></tr></thead><tbody>';
   S.turnos.forEach(t => {
     h += '<tr><td><b>' + esc(t.corto) + '</b><br><span class="tiny muted">' + esc(t.nombre) + '</span>' +
@@ -7843,7 +7862,7 @@ function ajustesServicio(){
   h += '</tbody></table></div>';
 
   /* Anadir uno nuevo. Aqui salen tambien los turnos sueltos para casos
-     especiales: el 10-6, el 11-7 y el 12-8. */
+     especiales: el 10-6, el 11-7, el 12-8 y el 2-10. */
   const tus = turnosDe('servicio').filter(t => t.activo);
   h += '<div class="fila" style="margin-top:12px;gap:8px;flex-wrap:wrap;align-items:flex-end">' +
     '<label style="flex:1;min-width:220px"><span class="tiny muted">Turno</span>' +
@@ -9259,7 +9278,7 @@ function pantallaHorario(){
    sigue con una copia vieja?". Sin un sello a la vista no hay forma de
    saberlo, y se pierde media tarde buscando el fallo donde no esta.
    ===================================================================== */
-const SELLO_VERSION = '2026-09-09-c';
+const SELLO_VERSION = '2026-09-23-b';
 
 let DIA_MOVIL = null;          // null = sin decidir, -1 = la semana, 0..6 = ese dia
 /* ¿La vista la eligio la persona o la decidio el ancho de la ventana?
@@ -12205,6 +12224,141 @@ function pruebas(){
     SEMANA = guardaSem;
     delete S.semanas[ks];
     generarServicio(k, { rehacer:true });
+  })();
+
+  /* =================================================================
+     EL TURNO 2-10 DE AGENTES DE SERVICIO (23 de septiembre de 2026)
+     Un turno normal: cualquiera lo puede hacer, no es principal y no
+     sustituye a ninguno. Semana lejana; al final todo queda como estaba.
+     ================================================================= */
+  (function(){
+    const t210 = S.turnos.find(t => t.corto === '2-10' && (t.equipos || []).indexOf('servicio') >= 0);
+    ok('2-10: existe en agentes de servicio (1)', !!t210 && turnosDe('servicio').some(t => t === t210),
+       turnosDe('servicio').map(t => t.corto).join(' '));
+    if(!t210) return;
+    ok('2-10: empieza a las 14:00, acaba a las 22:00 y cuenta 8 horas (2, 3, 4)',
+       t210.inicio === '14:00' && t210.fin === '22:00' && horasTurno(t210) === 8,
+       t210.inicio + '-' + t210.fin + ', ' + horasTurno(t210) + ' h');
+    ok('2-10: solo es de servicio, ni de Renta ni de Gerencia',
+       JSON.stringify(t210.equipos) === '["servicio"]' &&
+       !turnosDe('rotativo').includes(t210) && !turnosDe('supervision').includes(t210));
+    const serR = plantilla('servicio');
+    if(serR.length < 3) return;
+    const loa = serR.find(e => (e.fijos || []).length) || serR[0];
+    const resto = serR.filter(e => e !== loa);
+    const T = {}; S.turnos.forEach(t => { if(t.activo) T[t.corto] = t.id; });
+    const NORMALES = ['7-3','9-5','10-6','11-7','12-8','3-11'];
+    let kr = addDias(k, 7700);
+    for(let i = 0; i < 80 && (S.semanas[kr] || S.semanas[addDias(kr,-7)] || S.semanas[addDias(kr,7)]); i++) kr = addDias(kr, 7);
+    const guardaSem = SEMANA, guardaAus = (S.ausencias || []).slice();
+    const fotoSemanas = JSON.stringify(S.semanas), fotoPrio = JSON.stringify(S.config.servicio.prioridad);
+    const fotoFijos = JSON.stringify(serR.map(e => [e.id, e.fijos || []]));
+    const publicadas = () => JSON.stringify(Object.keys(S.semanas)
+      .filter(x => S.semanas[x] && S.semanas[x].estado === 'publicado').sort().map(x => [x, S.semanas[x]]));
+    const pubAntes = publicadas();
+    SEMANA = kr;
+    const w = semana(kr);
+    const cel = (e, d) => (S.semanas[kr].celdas || {})[ck(e.id, d)] || null;
+    const fila = (e) => { const o = []; for(let d = 0; d < 7; d++){ const c = cel(e, d);
+      o.push(c ? (c.t === LIBRE ? (esAusencia(c) ? 'A' : 'L') : ((turno(c.t) || {}).corto || '?')) : '-'); } return e.nombre + ': ' + o.join(' '); };
+    const principalesCubiertos = () => { for(let d = 0; d < 7; d++){
+      const abren = turnosServicioDia(d, kr).filter(x => x.clave);
+      if(abren.length < nucleoServicioDia(d)) return false;
+      const hechos = []; serR.forEach(e => { const c = cel(e, d); if(c && c.t !== LIBRE && !esAusencia(c)) hechos.push(c.t); });
+      for(const x of abren){ const i = hechos.indexOf(x.turnoId); if(i < 0) return false; hechos.splice(i, 1); } }
+      return true; };
+    /* sentinelas de Renta y Gerencia en la misma semana */
+    const rent = plantilla('rotativo')[0], sup = plantilla('supervision')[0];
+    if(rent) w.celdas[ck(rent.id, 1)] = { t:LIBRE, p:null, o:'manual', b:true };
+    if(sup)  w.celdas[ck(sup.id, 1)]  = { t:LIBRE, p:null, o:'manual', b:true };
+    const sentinelas = () => JSON.stringify([rent ? w.celdas[ck(rent.id,1)] : null, sup ? w.celdas[ck(sup.id,1)] : null]);
+    const sentAntes = sentinelas();
+
+    /* A mano: el mismo camino que usa el menu de la casilla */
+    const aMano = (e, d, tid) => { ponerCelda(e.id, d, tid, null, 'manual', true, kr); return cel(e, d); };
+    const dia = 1;   // martes: nadie tiene turno clavado ese dia
+    const r1 = [resto[0], resto[1], loa].map(e => { const c = aMano(e, dia, T['2-10']); return !!c && c.t === T['2-10']; });
+    ok('2-10: Stanley, Miguel y Loander lo pueden recibir a mano (5, 6, 7)', r1.every(Boolean),
+       [resto[0], resto[1], loa].map(e => e.nombre + ':' + (r1.shift() ? 'si' : 'no')).join(' '));
+    ok('2-10: sale en el menu de la casilla de todos, con el resto de turnos normales (8, 9)',
+       NORMALES.every(c => !T[c] || turnosDe('servicio').some(t => t.corto === c)) &&
+       turnosDe('servicio').some(t => t.id === T['2-10']),
+       turnosDe('servicio').map(t => t.corto).join(' '));
+    delete w.celdas[ck(resto[0].id, dia)]; delete w.celdas[ck(resto[1].id, dia)]; delete w.celdas[ck(loa.id, dia)];
+
+    /* Coexistencia, a mano: 7-3, 2-10 y 3-11 el mismo dia; y 7-3, 11-7 y 2-10 */
+    (function(){
+      aMano(resto[0], 3, T['7-3']); aMano(resto[1], 3, T['2-10']); aMano(loa, 3, T['3-11']);
+      const r = revisarEquipo('servicio', kr);
+      ok('2-10: convive el mismo dia con el 7-3 y el 3-11 sin conflicto (11, 12)',
+         !r.conflictos.some(c => c.dia === 3), fila(resto[0]) + ' | ' + fila(resto[1]) + ' | ' + fila(loa));
+      if(T['11-7']){
+        aMano(loa, 0, T['11-7']); aMano(resto[0], 0, T['7-3']); aMano(resto[1], 0, T['2-10']);
+        const r2 = revisarEquipo('servicio', kr);
+        ok('2-10: convive con el 7-3 y el 11-7 sin conflicto de turnos repetidos',
+           !r2.conflictos.some(c => c.dia === 0 && /en el turno/i.test(c.texto || '')));
+      }
+      w.celdas = {}; if(rent) w.celdas[ck(rent.id, 1)] = JSON.parse(sentAntes)[0]; if(sup) w.celdas[ck(sup.id, 1)] = JSON.parse(sentAntes)[1];
+    })();
+
+    /* Principales y reparto con la lista de fabrica */
+    ok('2-10: no es principal ni esta en la lista de fabrica (14)',
+       !prioridadServicio().some(x => x.turnoId === T['2-10'] && x.clave) &&
+       [0,1,2,3,4,5,6].every(d => nucleoServicioDia(d) === 2),
+       prioridadServicio().map(x => (turno(x.turnoId) || {}).corto + (x.clave ? '*' : '')).join(' '));
+    generarServicio(kr, { rehacer:true });
+    ok('2-10: con la lista de fabrica el 3-11 se sigue cubriendo todos los dias (13)',
+       principalesCubiertos(), serR.map(fila).join(' | '));
+    ok('2-10: Loander conserva su 11-7 clavado los dias que se abre (10)',
+       (loa.fijos || []).every(fx => fx.dias.every(d => {
+         if(!turnosServicioDia(d, kr).some(x => x.turnoId === fx.turnoId)) return true;
+         const c = cel(loa, d); return !!c && c.t === fx.turnoId; })) &&
+       JSON.stringify(serR.map(e => [e.id, e.fijos || []])) === fotoFijos, fila(loa));
+    ok('2-10: los dias libres siguen igual, uno por cabeza (16)',
+       serR.every(e => { let n = 0; for(let d = 0; d < 7; d++) if(esLibreReal(cel(e, d))) n++;
+         return n === libresServicioPorPersona(kr)[e.id]; }), serR.map(fila).join(' | '));
+
+    /* Con el 2-10 en la lista como refuerzo: entra en el reparto sin quitar principales */
+    S.config.servicio.prioridad.splice(2, 0, { turnoId:T['2-10'], dias:[0,1,1,1,1,0,1], clave:false });
+    olvidarLibresServicio();
+    generarServicio(kr, { rehacer:true });
+    const usaron = []; let junto = false;
+    for(let d = 0; d < 7; d++){
+      const ts = serR.map(e => cel(e, d)).filter(c => c && c.t !== LIBRE && !esAusencia(c)).map(c => c.t);
+      if(ts.indexOf(T['2-10']) >= 0) serR.forEach(e => { const c = cel(e, d); if(c && c.t === T['2-10'] && usaron.indexOf(e.nombre) < 0) usaron.push(e.nombre); });
+      if(ts.indexOf(T['2-10']) >= 0 && ts.indexOf(T['7-3']) >= 0 && ts.indexOf(T['3-11']) >= 0) junto = true;
+    }
+    ok('2-10 en la lista como refuerzo: el reparto lo usa junto al 7-3 y el 3-11, sin quitar ninguno (11, 12, 13)',
+       junto && principalesCubiertos(), serR.map(fila).join(' | '));
+    ok('2-10 en la lista: lo reciben agentes distintos, no uno fijo',
+       usaron.length >= 2, 'lo hicieron: ' + usaron.join(', '));
+    S.config.servicio.prioridad = JSON.parse(fotoPrio);
+    olvidarLibresServicio();
+
+    /* Descanso */
+    (function(){
+      const h = descansoEntre(t210, turno(T['7-3']));
+      aMano(resto[0], 4, T['2-10']); aMano(resto[0], 5, T['7-3']);
+      const r = revisarEquipo('servicio', kr);
+      ok('2-10 y al dia siguiente 7-3: 9 horas de descanso, pasa el minimo (15)',
+         h === 9 && h >= S.config.descansoMin &&
+         !r.conflictos.some(c => c.empId === resto[0].id && c.dia === 5 && /descansa/i.test(c.texto || '')),
+         h + ' horas, minimo ' + S.config.descansoMin);
+    })();
+
+    /* Ausencia: igual que antes, los principales aguantan */
+    S.ausencias = guardaAus.concat([{ id:'t210aus', empId:resto[1].id, tipo:'vacaciones', nota:'', desde:kr, hasta:addDias(kr, 6) }]);
+    generarServicio(kr, { rehacer:true });
+    ok('2-10: una ausencia se comporta como antes, sin tocar los principales (17)',
+       principalesCubiertos() && [0,1,2,3,4,5,6].every(d => esAusencia(cel(resto[1], d))), serR.map(fila).join(' | '));
+    S.ausencias = guardaAus;
+
+    ok('2-10: el reparto de servicio no toca Renta ni Gerencia (18, 19)', sentinelas() === sentAntes);
+    ok('2-10: las semanas publicadas no cambian (20)', publicadas() === pubAntes);
+
+    S.semanas = JSON.parse(fotoSemanas);
+    SEMANA = guardaSem;
+    olvidarLibresServicio();
   })();
 
   ok('Un turno de un equipo no se puede arrastrar al de otro',

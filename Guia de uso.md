@@ -178,7 +178,7 @@ Y tiene su excepción prevista: si en la lista has puesto ese turno **dos veces*
 
 ### Cuando lleguen más agentes
 
-No hay que tocar nada en el código. Das de alta al agente en **Empleados** con equipo *Agentes de Servicio* y, si quieres que ese día se abra un turno más, lo añades a la lista en **Ajustes → Agentes de servicio: qué se cubre primero**. Ahí tienes los turnos sueltos para casos especiales: **10-6, 11-7 y 12-8**.
+No hay que tocar nada en el código. Das de alta al agente en **Empleados** con equipo *Agentes de Servicio* y, si quieres que ese día se abra un turno más, lo añades a la lista en **Ajustes → Agentes de servicio: qué se cubre primero**. Ahí tienes los turnos sueltos para casos especiales: **10-6, 11-7, 12-8 y 2-10**. El **2-10** (2 p.m. a 10 p.m., 8 horas) se añadió el 23 de septiembre de 2026: es un turno normal, lo puede hacer cualquier agente de servicio, no es principal y el reparto solo lo usa si lo pones en esa lista.
 
 Y si no añades ninguna línea, el agente de más no sobra: el que no cabe ese día sale con **día libre** además del que le toca por la rotación.
 
