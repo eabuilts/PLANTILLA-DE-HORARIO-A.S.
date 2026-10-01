@@ -253,6 +253,26 @@ El orden importa, y es el que decide qué se cae cuando falta gente:
 | 5 | solo los 5 principales |
 | 4 | los 5 principales, con ISAAC tapando el 10-6 |
 
+### Dollar Thrifty de punta a punta: los días de seis
+
+Desde el 1 de octubre de 2026, los días en que trabajan **seis personas en Renta, contando a ISAAC si ese día le toca trabajar**, Dollar Thrifty de la Terminal A abre y cierra con su propio turno:
+
+| Ese día | Turnos |
+|---|---|
+| Hertz, Terminal A | 7-3 y 3-11 |
+| Terminal B | 8-4 y 3-11 |
+| **Dollar Thrifty, Terminal A** | **7-3 y 3-11** |
+
+Esos dos turnos ocupan el sitio del **10-6 de Dollar Thrifty** y del **12-8 de Hertz**, que ese día no se abren.
+
+- **Si ISAAC es uno de los seis, sale de sombra solo** y cubre uno de los dos turnos de Dollar Thrifty. Nunca va a la Terminal B, y tampoco a Hertz mientras su ficha de entrenamiento lo prohíba.
+- **Con cinco o menos, o con siete**, todo sigue como antes: el 10-6 de Dollar Thrifty es principal y la sombra solo sale para taparlo si falta una mano.
+- Los días libres no cambian: el reparto de descansos es el mismo de antes.
+
+Con la plantilla de hoy (seis agentes e ISAAC en entrenamiento) casi todos los días son de seis, así que **ISAAC cubre Dollar Thrifty casi todos los días que trabaja** y el 10-6 y el 12-8 casi no salen.
+
+Las dos filas están al final de la lista en **Ajustes → Agentes de Renta: qué se cubre primero**, marcadas "solo con 6 trabajando". Si las quitas de la lista, todo vuelve a la regla anterior.
+
 ### El 12-8: siempre Hertz, y solo con seis en el mostrador
 
 El **12-8 es de Hertz**, Terminal A. Nunca de Dollar Thrifty.

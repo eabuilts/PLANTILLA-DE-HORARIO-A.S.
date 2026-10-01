@@ -807,7 +807,15 @@ function prioridadInicial(puestos, turnos){
        dia: solo se abre cuando hay una sexta mano, o sea los dias en que
        libra una sola persona. */
     { puestoId:P['A - Hertz'], turnoId:T['12-8'], dias:todos.slice(), clave:false },
-    { puestoId:P['A - Dollar Thrifty'], turnoId:T['8-4'],  dias:todos.slice(), clave:false }
+    { puestoId:P['A - Dollar Thrifty'], turnoId:T['8-4'],  dias:todos.slice(), clave:false },
+    /* --- DOLLAR THRIFTY DE PUNTA A PUNTA, SOLO CON SEIS TRABAJANDO ---
+       Pedido el 1 de octubre de 2026. Los dias en que trabajan seis
+       agentes que cubren, Dollar Thrifty de la Terminal A abre y cierra
+       con su 7-3 y su 3-11, que ocupan el sitio del 10-6 de Dollar
+       Thrifty y del 12-8 de Hertz. Cualquier otro dia no se abren. Ver
+       esDiaSeisDT(). */
+    { puestoId:P['A - Dollar Thrifty'], turnoId:T['7-3'],  dias:todos.slice(), clave:false, seisDT:true },
+    { puestoId:P['A - Dollar Thrifty'], turnoId:T['3-11'], dias:todos.slice(), clave:false, seisDT:true }
   ];
 }
 
@@ -1161,7 +1169,7 @@ function datosDemo(){
 
   const k = lunesDe(hoyISO());
   return {
-    version: 31,
+    version: 32,
     empresa: 'ANDEL STAR',
     pin: '1234',
     config: {
@@ -2206,7 +2214,30 @@ function migrar(){
     }
     olvidarTodo();
   }
-  S.version = 31;
+  /* --- v32: Dollar Thrifty 7-3 y 3-11 los dias de seis trabajando --- */
+  if(!(S.version >= 32)){
+    /* Pedido el 1 de octubre de 2026, solo para agentes de renta. Se
+       anaden dos filas a la lista de prioridad, marcadas 'seisDT'. Lo
+       demas de la lista no se toca. Los borradores de esta semana en
+       adelante se rehacen para que salgan con la regla; lo publicado, lo
+       pasado y lo puesto a mano no se tocan. */
+    const pDT = (S.puestos || []).find(x => x.terminal === 'A' && /dollar/i.test(x.nombre || ''));
+    const t73 = (S.turnos || []).find(t => t.corto === '7-3' && (t.equipos || []).indexOf('rotativo') >= 0);
+    const t311 = (S.turnos || []).find(t => t.corto === '3-11' && (t.equipos || []).indexOf('rotativo') >= 0);
+    let anadidas = 0;
+    if(pDT && t73 && t311 && Array.isArray(S.config.prioridad)){
+      [t73, t311].forEach(t => {
+        const ya = S.config.prioridad.find(x => x.puestoId === pDT.id && x.turnoId === t.id);
+        if(ya){ ya.seisDT = true; ya.clave = false; }
+        else { S.config.prioridad.push({ puestoId:pDT.id, turnoId:t.id, dias:[1,1,1,1,1,1,1], clave:false, seisDT:true }); anadidas++; }
+      });
+      olvidarTodo();
+      pedirRehacerBorradores();
+      bitacora('Agentes de renta: los dias con seis trabajando, Dollar Thrifty de la Terminal A hace 7-3 y 3-11 ' +
+               'en lugar del 10-6 de Dollar Thrifty y el 12-8 de Hertz.');
+    }
+  }
+  S.version = 32;
 }
 
 function cargar(){
@@ -2402,8 +2433,8 @@ function principalesSinCubrir(k){
   k = k || SEMANA;
   const ctx = ctxReal(k);
   let n = 0;
-  for(let d = 0; d < 7; d++) prioridadDia(d, k).forEach(x => {
-    if(x.clave && ocupacion(ctx, d, x.turnoId, x.puestoId) < 1) n++;
+  for(let d = 0; d < 7; d++) principalesACubrir(d, k).forEach(x => {
+    if(ocupacion(ctx, d, x.turnoId, x.puestoId) < 1) n++;
   });
   return n;
 }
@@ -3260,7 +3291,7 @@ function puestosBaseDia(d, k){ return nucleoDia(d, k); }
    sin pasar de los que hay en la lista */
 function puestosDia(d, k){
   k = k || SEMANA;
-  return Math.min(prioridadDia(d, k).length, trabajanDia(d, k));
+  return Math.min(filasNormalesDia(d, k).length, trabajanDia(d, k));
 }
 /* =====================================================================
    QUIEN PUEDE SOSTENER LOS PUESTOS PRINCIPALES
@@ -3415,7 +3446,7 @@ function cupoLibres(d, k){
 /* El minimo de gente que TIENE que librar ese dia: si hay mas gente que
    puestos en la lista, alguien sobra y su sitio es el descanso */
 function minLibresDia(d, k){
-  return Math.max(0, disponiblesDia(d, k || SEMANA) - prioridadDia(d, k).length);
+  return Math.max(0, disponiblesDia(d, k || SEMANA) - filasNormalesDia(d, k).length);
 }
 /* Cuantos libran de verdad ese dia en lo que hay guardado */
 function libranEse(d, k){
@@ -3486,8 +3517,16 @@ function fijarLibranDe(ctx){
       if(esLibreReal(ctx.celdas[ck(e.id, d)])) v[d]++;
     });
   _libranAhora = v; _sombrasAhora = so;
+  /* las sombras que ese dia trabajan (presentes y sin dia libre en el borrador) */
+  const st = [0,0,0,0,0,0,0];
+  for(let d = 0; d < 7; d++) activos().forEach(e => {
+    if(!haceSombra(e) || ausenteEnDia(e.id, d, ctx.k)) return;
+    if(!esLibreReal(ctx.celdas[ck(e.id, d)])) st[d]++;
+  });
+  _sombrasTrabajanAhora = st;
 }
-function soltarLibran(){ _libranAhora = null; _sombrasAhora = null; }
+let _sombrasTrabajanAhora = null;
+function soltarLibran(){ _libranAhora = null; _sombrasAhora = null; _sombrasTrabajanAhora = null; }
 /* Una semana esta armada cuando TODOS tienen sus siete casillas puestas.
    A medio llenar no vale: si se contaran los libres de una hoja con dos
    celdas, saldria que no libra nadie y se abririan puestos de mas. */
@@ -3665,7 +3704,7 @@ function bloqueDosLibres(empId, k){
    pantalla: son aquellos en que no hay gente para toda la lista */
 function diasSinRelleno(k){
   const out = [];
-  for(let d = 0; d < 7; d++) if(puestosDia(d, k) < prioridadDia(d, k).length) out.push(d);
+  for(let d = 0; d < 7; d++) if(puestosDia(d, k) < filasNormalesDia(d, k).length) out.push(d);
   return out;
 }
 /* Cambiar a mano a quien le tocan los dos libres mueve las cuentas */
@@ -3780,10 +3819,107 @@ function esTurno128(turnoId){
   const t = turno(turnoId);
   return !!(t && t.corto === '12-8');
 }
+/* =====================================================================
+   DOLLAR THRIFTY DE PUNTA A PUNTA, SOLO CON SEIS TRABAJANDO
+   Pedido el 1 de octubre de 2026. Los dias en que trabajan SEIS agentes
+   que cubren -la misma cuenta que ya usa el 12-8: la sombra no entra-,
+   Dollar Thrifty de la Terminal A abre a las 7 y cierra a las 11 con su
+   7-3 y su 3-11. Esos dos ocupan el sitio del 10-6 de Dollar Thrifty y
+   del 12-8 de Hertz, que ese dia no se abren. Asi el dia queda con seis
+   puestos para seis personas:
+     Hertz 7-3 y 3-11 · Terminal B 8-4 y 3-11 · Dollar Thrifty 7-3 y 3-11
+   Con cinco o menos, o con siete, todo sigue exactamente como antes.
+
+   La lista de prioridad y la cuenta de principales NO cambian: de ellas
+   sale el reparto de los dias libres, y si dependieran de quien trabaja
+   se volveria la pescadilla que se muerde la cola. Lo que cambia es que
+   puestos hacen falta ese dia (cobNec) y cuales se vigilan como
+   principales (principalesACubrir). Se pregunta con trabajanDia, que al
+   armar la semana ya mira los descansos puestos, igual que el 12-8.
+   ===================================================================== */
+function filasSeisDT(){
+  if(!_priCache) listaPrioridad();
+  return _priCache.todos.filter(x => x.seisDT);
+}
+/* Cuantas sombras trabajan ese dia. Al armar, lo que hay en el borrador;
+   en una semana ya hecha, la hoja; si no, el plan de descansos. */
+function sombrasTrabajanDia(d, k){
+  if(_sombrasTrabajanAhora) return _sombrasTrabajanAhora[d] || 0;
+  const w = S.semanas[k];
+  let n = 0;
+  activos().forEach(e => {
+    if(!haceSombra(e) || ausenteEnDia(e.id, d, k)) return;
+    if(semanaArmada(k)){ if(!esLibreReal(w.celdas[ck(e.id, d)])) n++; }
+    else if((librePrevistoDe(e.id, k) || []).indexOf(d) < 0) n++;
+  });
+  return n;
+}
+/* El dia de seis: SEIS PERSONAS trabajando, contando a quien hace sombra
+   si ese dia le toca trabajar (el usuario lo preciso el 1 de octubre de
+   2026). Si la sombra es una de las seis, ese dia sale de sombra y cubre
+   uno de los dos turnos de Dollar Thrifty: ver colocarSombraSeisDT. */
+function esDiaSeisDT(d, k){
+  k = k || SEMANA;
+  if(!filasSeisDT().some(x => !x.dias || x.dias[d])) return false;
+  if(esPlantillaCorta(d, k)) return false;
+  const cubren = Math.max(0, cubrenDia(d, k) - (libranPorDia(k)[d] || 0));
+  return cubren + sombrasTrabajanDia(d, k) === 6;
+}
+/* ¿Es uno de los dos turnos de Dollar Thrifty de un dia de seis? Es lo
+   unico, ademas del 10-6 del rescate, que puede cubrir la sombra. */
+function esSeisDTParaSombra(puestoId, turnoId, d, k){
+  if(!filasSeisDT().some(x => x.puestoId === puestoId && x.turnoId === turnoId)) return false;
+  return esDiaSeisDT(d, k);
+}
+/* Al armar un dia de seis en que trabaja la sombra: sale de sombra y se
+   pone en uno de los dos turnos de Dollar Thrifty, ANTES de repartir el
+   resto, para que los demas se coloquen en los otros cinco puestos. Nunca
+   la Terminal B ni una marca vetada en su ficha: lo frena validar. */
+function colocarSombraSeisDT(ctx, k, d){
+  const filas = filasSeisDT().filter(x => !x.dias || x.dias[d]);
+  for(const e of activos()){
+    if(!haceSombra(e) || ausenteEnDia(e.id, d, k)) continue;
+    const c = ctx.celdas[ck(e.id, d)];
+    if(c) continue;                                    // libra, o ya puesto a mano
+    if(diasTrabCtx(ctx, e.id) >= diasObjetivoDe(e.id, k)) continue;
+    let mejor = null;
+    for(const x of filas){
+      if(ocupacion(ctx, d, x.turnoId, x.puestoId) >= 1) continue;
+      const r = validar(ctx, e.id, d, x.turnoId, x.puestoId, { reemplazar:true, rescate:true });
+      if(!r.ok && !r.aviso) continue;                  // el descanso minimo no se salta
+      let veces = 0;
+      for(let y = 0; y < 7; y++){ const cc = ctx.celdas[ck(e.id, y)]; if(cc && cc.t === x.turnoId && !cc.sombra) veces++; }
+      const pts = -veces * 10 + (r.ok ? 5 : 0);
+      if(!mejor || pts > mejor.pts) mejor = { pts, x };
+    }
+    if(mejor) ctx.celdas[ck(e.id, d)] = { t:mejor.x.turnoId, p:mejor.x.puestoId, o:'auto', b:false, rescate:true };
+  }
+}
+/* ¿Esta fila de la lista se apaga ese dia porque Dollar Thrifty va de punta a punta? */
+function apagadoEnDiaSeis(x, d, k){
+  if(!x || x.seisDT) return false;
+  if(!(esTurno128(x.turnoId) || (x.clave && esRescateDeSombra(x.puestoId, x.turnoId)))) return false;
+  return esDiaSeisDT(d, k);
+}
+/* Los principales que hay que vigilar ese dia. Normalmente, los de la
+   lista. Los dias de seis, sin el 10-6 de Dollar Thrifty y con su 7-3 y
+   su 3-11, que son los que mantienen ese mostrador abierto todo el dia. */
+function principalesACubrir(d, k){
+  const seis = esDiaSeisDT(d, k);
+  return prioridadDia(d, k).filter(x => seis ? ((x.clave && !apagadoEnDiaSeis(x, d, k)) || x.seisDT) : x.clave);
+}
+/* Las filas que cuentan para el reparto de siempre (sin las dos de seis) */
+function filasNormalesDia(d, k){
+  return prioridadDia(d, k).filter(x => !x.seisDT);
+}
 function cobNec(puestoId, turnoId, d, k){
   const lista = prioridadDia(d, k);
   const i = lista.findIndex(x => x.puestoId === puestoId && x.turnoId === turnoId);
   if(i < 0) return 0;
+  /* Dollar Thrifty de punta a punta: solo los dias de seis, y esos dias
+     sin el 10-6 de Dollar Thrifty ni el 12-8 de Hertz */
+  if(lista[i].seisDT) return esDiaSeisDT(d, k) ? 1 : 0;
+  if(apagadoEnDiaSeis(lista[i], d, k)) return 0;
   if(esTurno128(turnoId) && !cabeEl128(d, k)) return 0;
   return i < puestosDia(d, k) ? 1 : 0;
 }
@@ -4334,7 +4470,7 @@ function validar(ctx, empId, d, turnoId, puestoId, opciones){
      repartidas que tarde o temprano se olvida una.
      ================================================================= */
   if(turnoId !== LIBRE && haceSombra(emp) && puestoId && !opciones.sombra &&
-     !(opciones.rescate && esRescateDeSombra(puestoId, turnoId)))
+     !(opciones.rescate && (esRescateDeSombra(puestoId, turnoId) || esSeisDTParaSombra(puestoId, turnoId, d, ctx.k))))
     return no('sombra', emp.nombre + ' esta de sombra: acompana, no cubre un puesto.',
       'Solo sale de sombra para el ' + TURNO_RESCATE + ', y solo el dia que falte una mano. ' +
       'Marca "Ya esta listo" en su ficha para que pueda cubrir el resto.');
@@ -5490,6 +5626,7 @@ function rescatarTurno(ctx, k){
     for(const x of pri){
       if(!x.clave) continue;
       if(!esRescateDeSombra(x.puestoId, x.turnoId)) continue;
+      if(apagadoEnDiaSeis(x, d, k)) continue;      // los dias de seis el 10-6 no se abre
       if(ocupacion(ctx, d, x.turnoId, x.puestoId) >= 1) continue;   // ya hay alguien
       const e = sombraDisponible(d, k, x.puestoId, ctx);
       if(!e) continue;
@@ -5637,6 +5774,8 @@ function construir(k, base, azar){
   // 2) Despues los turnos, dia por dia. Dentro de cada dia, primero los tardios:
   //    son los que condicionan el dia siguiente por el descanso minimo.
   for(let d = 0; d < 7; d++){
+    /* dia de seis con la sombra trabajando: sale de sombra a Dollar Thrifty */
+    if(esDiaSeisDT(d, k)) colocarSombraSeisDT(ctx, k, d);
     const slots = [];
     for(const cmb of combinaciones()){
       const t = turno(cmb.turnoId);
@@ -5845,8 +5984,8 @@ function mejorPropuesta(k, base, intentos, evitar){
 function principalesVaciosEn(k, celdas){
   const ctx = { k, celdas };
   let n = 0;
-  for(let d = 0; d < 7; d++) prioridadDia(d, k).forEach(x => {
-    if(x.clave && ocupacion(ctx, d, x.turnoId, x.puestoId) < 1) n++;
+  for(let d = 0; d < 7; d++) principalesACubrir(d, k).forEach(x => {
+    if(ocupacion(ctx, d, x.turnoId, x.puestoId) < 1) n++;
   });
   return n;
 }
@@ -8439,7 +8578,8 @@ function ajustesPrioridad(){
         (pu && !pu.activo ? ' <span class="pill off">guardado</span>' : '') + '</td>' +
       '<td>' + (tu ? '<b>' + esc(tu.corto) + '</b><span class="mini2">' + hora12(tu.inicio) + ' a ' + hora12(tu.fin) + '</span>'
                    : '<span class="muted">(turno borrado)</span>') +
-        (tu && !tu.activo ? ' <span class="pill off">guardado</span>' : '') + '</td>' +
+        (tu && !tu.activo ? ' <span class="pill off">guardado</span>' : '') +
+        (x.seisDT ? '<span class="mini2">solo con 6 trabajando; ese dia sustituye al 10-6 de Dollar Thrifty y al 12-8 de Hertz</span>' : '') + '</td>' +
       '<td style="white-space:nowrap">' + DIAS.map((d, j) =>
         '<button class="btn ' + (dias[j] ? '' : 'sec ') + 'sm" style="padding:2px 6px;margin:1px;min-width:32px" ' +
         'title="' + d + '" onclick="priDia(' + i + ',' + j + ')">' + d.slice(0,2) + '</button>').join('') + '</td>' +
@@ -9278,7 +9418,7 @@ function pantallaHorario(){
    sigue con una copia vieja?". Sin un sello a la vista no hay forma de
    saberlo, y se pierde media tarde buscando el fallo donde no esta.
    ===================================================================== */
-const SELLO_VERSION = '2026-09-23-b';
+const SELLO_VERSION = '2026-10-01-a';
 
 let DIA_MOVIL = null;          // null = sin decidir, -1 = la semana, 0..6 = ese dia
 /* ¿La vista la eligio la persona o la decidio el ancho de la ventana?
@@ -9492,8 +9632,7 @@ function tablaEquipo(eq, mapaConf, vacia){
       });
       const abiertos = puestosDia(d, SEMANA);
       let nucleoFalta = 0;
-      prioridadDia(d, SEMANA).forEach(x => {
-        if(!x.clave) return;
+      principalesACubrir(d, SEMANA).forEach(x => {
         if(ocupacion(ctxReal(SEMANA), d, x.turnoId, x.puestoId) < 1) nucleoFalta++;
       });
       const col = vacioEq ? 'var(--soft)' : (nucleoFalta ? 'var(--bad)' : (trabajan === abiertos ? 'var(--ok)' : 'var(--warn)'));
@@ -11294,6 +11433,9 @@ function pruebas(){
        /* Los dias en que la sombra sale a tapar el 10-6 SI son un puesto
           cubierto, asi que cuentan como trabajo. El resto de sus dias no. */
        for(let d = 0; d < 7; d++) if(rescateHaceFaltaHoy(d, k)) trabajo++;
+       /* Y desde el 1 de octubre de 2026, los dias de seis en que la sombra
+          trabaja: sale de sombra a Dollar Thrifty y es un puesto cubierto. */
+       for(let d = 0; d < 7; d++) if(!rescateHaceFaltaHoy(d, k) && esDiaSeisDT(d, k)) trabajo += sombrasTrabajanDia(d, k);
        let puestos = 0;
        for(let d = 0; d < 7; d++) for(const c of combinaciones()) puestos += cobNec(c.puestoId, c.turnoId, d, k);
        return trabajo === puestos;
@@ -11303,6 +11445,9 @@ function pruebas(){
        /* Los dias en que la sombra sale a tapar el 10-6 SI son un puesto
           cubierto, asi que cuentan como trabajo. El resto de sus dias no. */
        for(let d = 0; d < 7; d++) if(rescateHaceFaltaHoy(d, k)) trabajo++;
+       /* Y desde el 1 de octubre de 2026, los dias de seis en que la sombra
+          trabaja: sale de sombra a Dollar Thrifty y es un puesto cubierto. */
+       for(let d = 0; d < 7; d++) if(!rescateHaceFaltaHoy(d, k) && esDiaSeisDT(d, k)) trabajo += sombrasTrabajanDia(d, k);
        let puestos = 0;
        for(let d = 0; d < 7; d++) for(const c of combinaciones()) puestos += cobNec(c.puestoId, c.turnoId, d, k);
        return trabajo + ' turnos y ' + puestos + ' puestos';
@@ -11515,9 +11660,12 @@ function pruebas(){
       });
       return x;
     };
-    ok('El 12-8 sale solo con seis en el mostrador y uno librando',
+    /* Desde el 1 de octubre de 2026 los dias de seis son de Dollar Thrifty
+       7-3 y 3-11, que ocupan el sitio del 12-8 (ver esDiaSeisDT). El 12-8
+       sigue con su regla solo los dias que no son de seis. */
+    ok('El 12-8 sale solo con seis en el mostrador y uno librando, si ese dia no es de Dollar Thrifty de punta a punta',
        (() => { for(let d = 0; d < 7; d++){
-           const cumple = manosDe(d) === 6 && libranDe(d) === 1;
+           const cumple = manosDe(d) === 6 && libranDe(d) === 1 && !esDiaSeisDT(d, k);
            if(hay128(d) !== cumple) return false;
          } return true; })(),
        (() => { const o = [];
@@ -12359,6 +12507,93 @@ function pruebas(){
     S.semanas = JSON.parse(fotoSemanas);
     SEMANA = guardaSem;
     olvidarLibresServicio();
+  })();
+
+  /* =================================================================
+     DOLLAR THRIFTY 7-3 Y 3-11, SOLO CON SEIS TRABAJANDO (1 oct 2026)
+     Se arma cada escenario en una semana lejana, con ISAAC de sombra y
+     ya listo, y al final se deja todo como estaba.
+     ================================================================= */
+  (function(){
+    const rot = S.empleados.filter(x => equipoDe(x) === 'rotativo');
+    const pDT = S.puestos.find(x => x.terminal === 'A' && /dollar/i.test(x.nombre || ''));
+    const pH  = S.puestos.find(x => x.terminal === 'A' && /^hertz$/i.test(x.nombre || ''));
+    const T = {}; S.turnos.forEach(t => { if(t.activo && (t.equipos || []).indexOf('rotativo') >= 0) T[t.corto] = t.id; });
+    ok('DT 6: la lista de renta tiene Dollar Thrifty 7-3 y 3-11 solo para los dias de seis',
+       filasSeisDT().length === 2 && filasSeisDT().every(x => x.puestoId === pDT.id && !x.clave) &&
+       filasSeisDT().some(x => x.turnoId === T['7-3']) && filasSeisDT().some(x => x.turnoId === T['3-11']),
+       filasSeisDT().map(x => (puesto(x.puestoId)||{}).corto + ' ' + (turno(x.turnoId)||{}).corto).join(', '));
+    ok('DT 6: los principales de la lista siguen siendo los cinco de siempre',
+       listaPrioridad().filter(x => x.clave).length === 5);
+    if(rot.length < 6 || !pDT || !pH) return;
+    const ent = rot.find(x => entrenando(x));
+    const guardaEnt = ent ? JSON.parse(JSON.stringify({ e: ent.entrenamiento, pp: ent.puestosProhibidos, tp: ent.turnosProhibidos })) : null;
+    const guardaAct = rot.map(x => x.activo), guardaSem = SEMANA, guardaAus = (S.ausencias || []).slice();
+    const fotoSemanas = JSON.stringify(S.semanas);
+    const pubAntes = JSON.stringify(Object.keys(S.semanas).filter(x => S.semanas[x].estado === 'publicado').sort().map(x => [x, S.semanas[x]]));
+    const limpiar = () => { olvidarPrioridad(); olvidarRefuerzos(); olvidarLibres(); olvidarObjetivoTipo(); };
+    let kr = addDias(k, 8400);
+    for(let i = 0; i < 80 && (S.semanas[kr] || S.semanas[addDias(kr,-7)] || S.semanas[addDias(kr,7)]); i++) kr = addDias(kr, 7);
+    const hace = (kk, d, pid, tid) => ocupacion(ctxReal(kk), d, tid, pid);
+    const escenario = (nombre, kk) => {
+      SEMANA = kk; limpiar(); delete S.semanas[kk]; semana(kk); otraAlternativa(kk);
+      const ctx = ctxReal(kk); const rev = revisar(ctx);
+      let seis = 0, malSeis = 0, malOtros = 0, rescateEnSeis = 0, sombraDT = 0, sombraMal = 0; const diasSeis = [];
+      for(let d = 0; d < 7; d++){
+        if(esDiaSeisDT(d, kk)){
+          seis++; diasSeis.push(DIAS_CORTO[d]);
+          if(hace(kk, d, pDT.id, T['7-3']) < 1 || hace(kk, d, pDT.id, T['3-11']) < 1) malSeis++;
+          if(hace(kk, d, pDT.id, T['10-6']) > 0 || hace(kk, d, pH.id, T['12-8']) > 0) malSeis++;
+          activos().forEach(e => { const c = celda(e.id, d, kk);
+            if(!c || !c.rescate) return;
+            if(filasSeisDT().some(x => x.puestoId === c.p && x.turnoId === c.t)) sombraDT++; else rescateEnSeis++; });
+          /* la sombra que trabaja un dia de seis tiene que estar cubriendo Dollar Thrifty */
+          activos().forEach(e => { if(!haceSombra(e)) return; const c = celda(e.id, d, kk);
+            if(c && c.t !== LIBRE && !esAusencia(c) && !(c.rescate && c.p === pDT.id)) sombraMal++; });
+        } else {
+          if(hace(kk, d, pDT.id, T['7-3']) > 0 || hace(kk, d, pDT.id, T['3-11']) > 0) malOtros++;
+        }
+        /* la sombra nunca en la Terminal B */
+        activos().forEach(e => { if(!haceSombra(e)) return; const c = celda(e.id, d, kk);
+          if(c && c.p && (puesto(c.p) || {}).terminal === 'B') sombraMal++; });
+      }
+      return { nombre, seis, diasSeis, malSeis, malOtros, rescateEnSeis, sombraDT, sombraMal,
+               huecos: principalesSinCubrir(kk), conflictos: rev.conflictos.length };
+    };
+    const texto = (r) => r.nombre + ': dias de seis ' + r.seis + (r.diasSeis.length ? ' (' + r.diasSeis.join(' ') + ')' : '') +
+      ', la sombra cubre Dollar Thrifty ' + r.sombraDT + ' dia(s), huecos ' + r.huecos + ', conflictos ' + r.conflictos;
+    try {
+      /* A. Plantilla completa, ISAAC de sombra */
+      const a = escenario('sombra', kr);
+      ok('DT 6, ISAAC de sombra: los dias de seis Dollar Thrifty hace 7-3 y 3-11 y no se abren el 10-6 ni el 12-8',
+         a.malSeis === 0 && a.rescateEnSeis === 0, texto(a));
+      ok('DT 6, ISAAC de sombra: los demas dias Dollar Thrifty no recibe 7-3 ni 3-11', a.malOtros === 0, texto(a));
+      ok('DT 6, ISAAC de sombra: sin principales vacios ni conflictos', a.huecos === 0 && a.conflictos === 0, texto(a));
+      ok('DT 6, ISAAC de sombra: los dias de seis que trabaja sale de sombra a Dollar Thrifty, nunca a la Terminal B',
+         a.sombraMal === 0, texto(a));
+      /* B. ISAAC ya listo: siete que cubren */
+      if(ent){ ent.entrenamiento = Object.assign({}, ent.entrenamiento, { activo:false }); ent.puestosProhibidos = []; ent.turnosProhibidos = []; }
+      const b = escenario('listo', addDias(kr, 7));
+      ok('DT 6, ISAAC listo: la regla se cumple los dias de seis y solo esos dias',
+         b.malSeis === 0 && b.malOtros === 0 && b.rescateEnSeis === 0, texto(b));
+      ok('DT 6, ISAAC listo: sin principales vacios ni conflictos', b.huecos === 0 && b.conflictos === 0, texto(b));
+      if(ent){ ent.entrenamiento = guardaEnt.e; ent.puestosProhibidos = guardaEnt.pp; ent.turnosProhibidos = guardaEnt.tp; }
+      /* C. Uno de vacaciones: no hay dias de seis y todo es como antes */
+      const fuera = rot.find(x => !entrenando(x) && x.libreFijo < 0);
+      S.ausencias = guardaAus.concat([{ id:'dt6', empId:fuera.id, tipo:'vacaciones', nota:'', desde:addDias(kr, 14), hasta:addDias(kr, 20) }]);
+      const c = escenario('uno de vacaciones', addDias(kr, 14));
+      ok('DT 6, uno de vacaciones: la regla se cumple los dias que llegan a seis contando a ISAAC, y los demas dias el 10-6 queda cubierto',
+         c.malSeis === 0 && c.malOtros === 0 && c.sombraMal === 0 && c.huecos === 0 && c.conflictos === 0, texto(c));
+      S.ausencias = guardaAus;
+    } finally {
+      if(ent && guardaEnt){ ent.entrenamiento = guardaEnt.e; ent.puestosProhibidos = guardaEnt.pp; ent.turnosProhibidos = guardaEnt.tp; }
+      rot.forEach((x, i) => x.activo = guardaAct[i]);
+      S.ausencias = guardaAus;
+      S.semanas = JSON.parse(fotoSemanas);
+      SEMANA = guardaSem; limpiar();
+    }
+    ok('DT 6: las semanas publicadas no cambian',
+       JSON.stringify(Object.keys(S.semanas).filter(x => S.semanas[x].estado === 'publicado').sort().map(x => [x, S.semanas[x]])) === pubAntes);
   })();
 
   ok('Un turno de un equipo no se puede arrastrar al de otro',
