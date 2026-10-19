@@ -109,7 +109,7 @@ Lo mismo se puede hacer desde **Ajustes → Agentes de servicio**, en *Quién ha
 
 **Cada agente libra un día a la semana.** Aquí no hay turno de dos días seguidos como en agentes de renta.
 
-**El reparto nunca da más de un día libre.** Desde el 19 de octubre de 2026, al pulsar **Llenar este horario**, **Completar lo que falta** u **Otra alternativa**, ningún agente de servicio sale con más de un día libre puesto por el sistema. Si un día la lista abre menos turnos que agentes, el que sobra no se queda libre: hace un turno de servicio que nadie cubre ese día, respetando el descanso mínimo. Y si ya le marcaste un día libre a mano, el reparto no le añade otro. **El segundo día lo decides tú**, marcándolo a mano en su casilla.
+**El reparto nunca da más de un día libre.** Desde el 19 de octubre de 2026, al pulsar **Llenar este horario**, **Completar lo que falta** u **Otra alternativa**, ningún agente de servicio sale con más de un día libre puesto por el sistema. Si un día la lista abre menos turnos que agentes, el que sobra no se queda libre: hace un turno de servicio que nadie cubre ese día, respetando el descanso mínimo. Y si ya le marcaste un día libre a mano, el reparto no le añade otro. **El segundo día lo decides tú**, marcándolo a mano en su casilla. Vale igual con cualquier número de auxiliares: si hay más auxiliares trabajando que turnos de servicio distintos, se repite el turno que menos gente tenga ese día, y eso no se marca como conflicto. Dos en el mismo turno solo es conflicto si ese día quedaba algún turno de servicio sin nadie.
 
 La cuenta cierra sola: 3 agentes × 7 días son 21 días, menos 3 de descanso quedan **18 turnos**, que son exactamente los 14 de los dos principales más 4 de refuerzo. Los cuatro días de refuerzo caen en los días en que no libra nadie.
 
@@ -254,6 +254,10 @@ El orden importa, y es el que decide qué se cae cuando falta gente:
 | 6 | los 5 principales + el **12-8 de Hertz** |
 | 5 | solo los 5 principales |
 | 4 | los 5 principales, con ISAAC tapando el 10-6 |
+
+### Con mucha gente, el apoyo respeta las reglas de cada turno
+
+Cuando en Renta sobra gente para los puestos del día, el reparto coloca al que sobra **de apoyo**. Desde el 19 de octubre de 2026 ese apoyo nunca va a un turno cuya regla dice que ese día no se abre: el **11-7 de la Terminal B** fuera de la plantilla corta, el **7-3 y el 3-11 de Dollar Thrifty** fuera de los días de seis, el **10-6 de Dollar Thrifty y el 12-8 de Hertz** en los días de seis, y el **12-8** los días que su regla no lo abre. Así las reglas valen igual con 7 agentes que con 20.
 
 ### Dollar Thrifty de punta a punta: los días de seis
 

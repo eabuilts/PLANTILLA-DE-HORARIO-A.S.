@@ -3908,6 +3908,28 @@ function principalesACubrir(d, k){
   const seis = esDiaSeisDT(d, k);
   return prioridadDia(d, k).filter(x => seis ? ((x.clave && !apagadoEnDiaSeis(x, d, k)) || x.seisDT) : x.clave);
 }
+/* =====================================================================
+   EL APOYO RESPETA LAS REGLAS DE CADA TURNO
+   19 de octubre de 2026: "todas las reglas deben seguir igual aunque se
+   agreguen decenas de empleados". Cuando sobra gente, el reparto coloca
+   a quien no tiene puesto como apoyo en cualquier turno. Con la plantilla
+   de siete nunca sobraba nadie; con once ya salia un 11-7 en la Terminal
+   B un dia de mas de cuatro personas. Ahora el apoyo no usa un turno cuya
+   regla dice que ese dia no se abre:
+     - el 11-7 de la Terminal B fuera de la plantilla corta,
+     - el 7-3 y el 3-11 de Dollar Thrifty fuera de los dias de seis,
+     - el 10-6 de Dollar Thrifty y el 12-8 de Hertz en los dias de seis,
+     - el 12-8 de Hertz los dias que su regla no lo abre.
+   ===================================================================== */
+function apoyoVetadoPorRegla(cmb, d, k){
+  const tB = turnoUnicoB(), pB = puestoTerminalB();
+  if(tB && pB && cmb.turnoId === tB.id && cmb.puestoId === pB.id && !esPlantillaCorta(d, k)) return true;
+  const fila = listaPrioridad().find(x => x.puestoId === cmb.puestoId && x.turnoId === cmb.turnoId);
+  if(fila && fila.seisDT && !esDiaSeisDT(d, k)) return true;
+  if(fila && apagadoEnDiaSeis(fila, d, k)) return true;
+  if(esTurno128(cmb.turnoId) && !cabeEl128(d, k)) return true;
+  return false;
+}
 /* Las filas que cuentan para el reparto de siempre (sin las dos de seis) */
 function filasNormalesDia(d, k){
   return prioridadDia(d, k).filter(x => !x.seisDT);
@@ -5820,6 +5842,7 @@ function construir(k, base, azar){
       for(const cmb of combinaciones()){
         const t = turno(cmb.turnoId);
         if(!t || !t.activo) continue;
+        if(apoyoVetadoPorRegla(cmb, d, k)) continue;      // ese turno no se abre ese dia por su regla
         const r = validar(ctx, e.id, d, cmb.turnoId, cmb.puestoId, { reemplazar:true });
         // las reglas de verdad duras no se tocan nunca
         if(!r.ok && ['diaNoDisp','turnoProhibido','puestoProhibido','inactivo','doble','descanso','sombra'].includes(r.motivo)) continue;
@@ -5881,6 +5904,7 @@ function construir(k, base, azar){
     for(const cmb of combinaciones()){
       const t = turno(cmb.turnoId);
       if(!t || !t.activo) continue;
+      if(apoyoVetadoPorRegla(cmb, x.d, k)) continue;    // ese turno no se abre ese dia por su regla
       const r = validar(ctx, x.e.id, x.d, cmb.turnoId, cmb.puestoId, { reemplazar:true });
       if(!r.ok && ['libreFijo','diaNoDisp','turnoProhibido','puestoProhibido','inactivo','doble','descanso','sombra'].includes(r.motivo)) continue;
       let pts = (r.ok ? 400 : (r.aviso ? 150 : 0));
@@ -6435,11 +6459,23 @@ function limitarLibresServicio(k){
       const lista = [];
       prioridadServicioDia(d).forEach(x => { const i = quedan.indexOf(x.turnoId); if(i >= 0) quedan.splice(i, 1); else lista.push(x.turnoId); });
       turnosDe('servicio').forEach(t => { if(hechos.indexOf(t.id) < 0 && lista.indexOf(t.id) < 0) lista.push(t.id); });
-      const vale = lista.filter(tid => (e.turnosProhibidos || []).indexOf(tid) < 0);
       const descansa = (tid) => {
         const t = turno(tid), a = turnoDe(vecino(e, d - 1)), b = turnoDe(vecino(e, d + 1));
         return (!a || descansoEntre(a, t) >= minD) && (!b || descansoEntre(t, b) >= minD);
       };
+      let vale = lista.filter(tid => (e.turnosProhibidos || []).indexOf(tid) < 0);
+      /* Con muchos agentes se acaban los turnos distintos (hay siete). La
+         regla del dia libre manda: se repite el turno de la lista que
+         menos gente tenga ese dia (pedido el 19 de octubre de 2026: las
+         reglas valen igual con decenas de empleados). */
+      if(!vale.some(descansa)){
+        const veces = (tid) => eq.filter(x => { const c = celda(x.id, d, k); return c && c.t === tid; }).length;
+        const repetibles = prioridadServicioDia(d).map(x => x.turnoId)
+          .concat(turnosDe('servicio').map(t => t.id))
+          .filter((tid, i, a) => a.indexOf(tid) === i && (e.turnosProhibidos || []).indexOf(tid) < 0)
+          .sort((a, b) => veces(a) - veces(b));
+        vale = vale.concat(repetibles.filter(tid => vale.indexOf(tid) < 0));
+      }
       const tid = vale.find(descansa) || vale[0];
       if(!tid) continue;
       ponerCelda(e.id, d, tid, (S.config.servicio || {}).puestoId || null, 'auto', false, k);
@@ -6596,11 +6632,18 @@ function revisarEquipo(eq, k){
         if(!c || c.t === LIBRE || esAusencia(c)) return;
         (quien[c.t] = quien[c.t] || []).push(e);
       });
+      /* Con mas agentes trabajando que turnos de servicio distintos, alguno
+         tiene que repetir: eso no es un error. Solo se marca si ese dia
+         queda algun turno de servicio sin nadie, es decir, si se podia
+         evitar (19 de octubre de 2026: las reglas valen con decenas de
+         empleados). */
+      const libresTurnos = turnosDe('servicio').filter(t => !quien[t.id]).length;
       for(const tid in quien){
         const juntos = quien[tid];
         const abre = prioridadServicioDia(d).filter(x => x.turnoId === tid).length;
         const caben = Math.max(1, abre);
         if(juntos.length <= caben) continue;
+        if(!libresTurnos) continue;
         conflictos.push({ empId: juntos[juntos.length - 1].id, dia: d,
           texto: juntos.map(e => e.nombre).join(' y ') + ' estan los ' + juntos.length +
                  ' en el turno ' + ((turno(tid) || {}).corto || '?') + ' el ' + DIAS[d].toLowerCase() + '.',
@@ -9481,7 +9524,7 @@ function pantallaHorario(){
    sigue con una copia vieja?". Sin un sello a la vista no hay forma de
    saberlo, y se pierde media tarde buscando el fallo donde no esta.
    ===================================================================== */
-const SELLO_VERSION = '2026-10-19-b';
+const SELLO_VERSION = '2026-10-19-d';
 
 let DIA_MOVIL = null;          // null = sin decidir, -1 = la semana, 0..6 = ese dia
 /* ¿La vista la eligio la persona o la decidio el ancho de la ventana?
@@ -12739,8 +12782,45 @@ function pruebas(){
       generarServicio(kr, {});
       ok('SERVICIO 1 LIBRE: dos libres puestos a mano se respetan',
          esLibreReal(celda(sers[0].id, 2, kr)) && esLibreReal(celda(sers[0].id, 3, kr)), fila(sers[0], kr));
+      /* F. con decenas de agentes la regla no cambia */
+      const extra = [];
+      for(let i = 0; i < 20; i++){ const e = empleadoNuevo('PRUEBA_AUX_' + (i + 1), 'servicio'); S.empleados.push(e); extra.push(e); }
+      olvidarTodo();
+      delete S.semanas[kr]; semana(kr);
+      generarServicio(kr, { rehacer:true });
+      const grandes = plantilla('servicio');
+      const revG = revisarEquipo('servicio', kr);
+      ok('SERVICIO 1 LIBRE: con ' + grandes.length + ' agentes nadie pasa de un dia libre y no hay conflictos',
+         grandes.every(e => libresAuto(e, kr) <= 1) && revG.conflictos.length === 0,
+         grandes.filter(e => libresAuto(e, kr) > 1).length + ' con mas de uno, ' + revG.conflictos.length + ' conflicto(s)');
+      S.empleados = S.empleados.filter(e => extra.indexOf(e) < 0); olvidarTodo();
     } finally {
       S.config.servicio.prioridad = JSON.parse(fotoPrio); olvidarLibresServicio();
+      S.empleados = S.empleados.filter(e => !/^PRUEBA_AUX_/.test(e.nombre || '')); olvidarTodo();
+      S.semanas = JSON.parse(fotoSemanas); SEMANA = guardaSem;
+    }
+  })();
+
+  /* =================================================================
+     RENTA CON PLANTILLA GRANDE: EL APOYO RESPETA LAS REGLAS (19 oct 2026)
+     ================================================================= */
+  (function(){
+    const guardaSem = SEMANA, fotoSemanas = JSON.stringify(S.semanas);
+    const extra = [];
+    try {
+      for(let i = 0; i < 4; i++){ const e = empleadoNuevo('PRUEBA_REN_' + (i + 1), 'rotativo'); S.empleados.push(e); extra.push(e); }
+      olvidarTodo();
+      let kr = addDias(k, 10500);
+      for(let i = 0; i < 80 && (S.semanas[kr] || S.semanas[addDias(kr,-7)] || S.semanas[addDias(kr,7)]); i++) kr = addDias(kr, 7);
+      SEMANA = kr; semana(kr); otraAlternativa(kr);
+      const rot = plantilla('rotativo'); const tB = turnoUnicoB(), pB = puestoTerminalB();
+      let mal = 0; const det = [];
+      for(let d = 0; d < 7; d++) rot.forEach(e => { const c = celda(e.id, d, kr);
+        if(c && c.t !== LIBRE && c.p && apoyoVetadoPorRegla({ puestoId:c.p, turnoId:c.t }, d, kr)){ mal++; det.push(DIAS_CORTO[d] + ' ' + e.nombre + ' ' + (turno(c.t)||{}).corto); } });
+      ok('RENTA ' + rot.length + ' AGENTES: nadie queda en un turno que su regla no abre ese dia (11-7 B, Dollar Thrifty, 12-8)',
+         mal === 0, mal ? det.join(', ') : 'ninguno');
+    } finally {
+      S.empleados = S.empleados.filter(e => !/^PRUEBA_REN_/.test(e.nombre || '')); olvidarTodo();
       S.semanas = JSON.parse(fotoSemanas); SEMANA = guardaSem;
     }
   })();
