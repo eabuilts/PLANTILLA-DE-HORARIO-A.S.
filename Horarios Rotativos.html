@@ -6386,7 +6386,68 @@ function generarServicio(k, opciones){
      entro en el reparto, se le pone el dia libre y se ve. */
   for(let d = 0; d < 7; d++) for(const e of eq)
     if(!celda(e.id, d, k)) ponerCelda(e.id, d, LIBRE, null, 'auto', false, k);
+  puestos += limitarLibresServicio(k);
   return puestos;
+}
+/* =====================================================================
+   AGENTES DE SERVICIO: COMO MUCHO UN DIA LIBRE PUESTO POR EL REPARTO
+   Pedido el 19 de octubre de 2026: al llenar, completar o pedir otra
+   alternativa, el reparto NUNCA deja a un agente de servicio con mas de
+   un dia libre. El segundo dia, si lo hay, lo decide el usuario a mano.
+   Y si ya le marcaste uno a mano, el reparto no le anade otro.
+
+   Pasaba cuando la lista abria menos turnos que agentes un dia (por
+   ejemplo sin el 9-5): el que no cabia quedaba libre, y alguno acababa
+   con dos o tres. Ahora ese dia de mas pasa a un turno de servicio: uno
+   de la lista que quede sin hacer y, si no, otro turno de servicio que
+   nadie haga ese dia, respetando el descanso minimo si se puede.
+
+   Lo que no se toca: lo puesto a mano, las ausencias y los dias que la
+   ficha marca como no disponibles, que no son un dia libre del reparto.
+   ===================================================================== */
+function limitarLibresServicio(k){
+  let cambiados = 0;
+  const minD = S.config.descansoMin > 0 ? S.config.descansoMin : 8;
+  const eq = plantilla('servicio');
+  const plan = patronLibresServicio(k);
+  const turnoDe = (c) => (c && c.t !== LIBRE && !esAusencia(c)) ? turno(c.t) : null;
+  const vecino = (e, d) => d < 0 ? celda(e.id, 6, addDias(k, -7)) : d > 6 ? celda(e.id, 0, addDias(k, 7)) : celda(e.id, d, k);
+  for(const e of eq){
+    const libres = [], aMano = [];
+    for(let d = 0; d < 7; d++){
+      const c = celda(e.id, d, k);
+      if(!c || c.t !== LIBRE || esAusencia(c)) continue;
+      if(c.o === 'manual' || c.b){ aMano.push(d); continue; }
+      if(diaReservado(e.id, d, k)) continue;            // no disponible por ficha
+      libres.push(d);
+    }
+    /* cuantos libres puede poner el reparto: uno, o ninguno si ya hay uno a mano */
+    const cabe = aMano.length ? 0 : Math.min(1, libresServicioPorPersona(k)[e.id] || 0);
+    if(libres.length <= cabe) continue;
+    /* se queda el que marca el plan; los demas pasan a trabajar */
+    const suyo = (plan[e.id] || []).find(d => libres.indexOf(d) >= 0);
+    const guardar1 = cabe ? (suyo != null ? suyo : libres[0]) : null;
+    for(const d of libres){
+      if(d === guardar1) continue;
+      /* turnos de servicio de ese dia: primero los de la lista que nadie hace, luego el resto */
+      const hechos = eq.map(x => turnoDe(celda(x.id, d, k))).filter(Boolean).map(t => t.id);
+      const quedan = hechos.slice();
+      const lista = [];
+      prioridadServicioDia(d).forEach(x => { const i = quedan.indexOf(x.turnoId); if(i >= 0) quedan.splice(i, 1); else lista.push(x.turnoId); });
+      turnosDe('servicio').forEach(t => { if(hechos.indexOf(t.id) < 0 && lista.indexOf(t.id) < 0) lista.push(t.id); });
+      const vale = lista.filter(tid => (e.turnosProhibidos || []).indexOf(tid) < 0);
+      const descansa = (tid) => {
+        const t = turno(tid), a = turnoDe(vecino(e, d - 1)), b = turnoDe(vecino(e, d + 1));
+        return (!a || descansoEntre(a, t) >= minD) && (!b || descansoEntre(t, b) >= minD);
+      };
+      const tid = vale.find(descansa) || vale[0];
+      if(!tid) continue;
+      ponerCelda(e.id, d, tid, (S.config.servicio || {}).puestoId || null, 'auto', false, k);
+      cambiados++;
+    }
+  }
+  if(cambiados) olvidarLibresServicio();
+  return cambiados;
 }
 /* =====================================================================
    LOS HUECOS DE LOS OTROS DOS HORARIOS SE RELLENAN SOLOS
@@ -9420,7 +9481,7 @@ function pantallaHorario(){
    sigue con una copia vieja?". Sin un sello a la vista no hay forma de
    saberlo, y se pierde media tarde buscando el fallo donde no esta.
    ===================================================================== */
-const SELLO_VERSION = '2026-10-19-a';
+const SELLO_VERSION = '2026-10-19-b';
 
 let DIA_MOVIL = null;          // null = sin decidir, -1 = la semana, 0..6 = ese dia
 /* ¿La vista la eligio la persona o la decidio el ancho de la ventana?
@@ -12635,6 +12696,52 @@ function pruebas(){
     } finally {
       S.semanas = JSON.parse(fotoSemanas);
       SEMANA = guardaSem; PANTALLA = guardaPant;
+    }
+  })();
+
+  /* =================================================================
+     SERVICIO: COMO MUCHO UN DIA LIBRE DEL REPARTO (19 de octubre de 2026)
+     ================================================================= */
+  (function(){
+    const sers = plantilla('servicio');
+    if(sers.length < 2) return;
+    const guardaSem = SEMANA, fotoSemanas = JSON.stringify(S.semanas), fotoPrio = JSON.stringify(S.config.servicio.prioridad);
+    let kr = addDias(k, 9800);
+    for(let i = 0; i < 80 && (S.semanas[kr] || S.semanas[addDias(kr,-7)] || S.semanas[addDias(kr,7)]); i++) kr = addDias(kr, 7);
+    const libresAuto = (e, kk) => { let n = 0; for(let d = 0; d < 7; d++){ const c = celda(e.id, d, kk); if(c && c.t === LIBRE && !esAusencia(c) && !(c.o === 'manual' || c.b)) n++; } return n; };
+    const fila = (e, kk) => { const f = []; for(let d = 0; d < 7; d++){ const c = celda(e.id, d, kk); f.push(!c ? '-' : c.t === LIBRE ? (c.o === 'manual' || c.b ? 'L*' : 'L') : (turno(c.t) || {}).corto); } return e.nombre + ': ' + f.join(' '); };
+    try {
+      SEMANA = kr;
+      /* A. con la lista de siempre: igual que antes, uno cada uno */
+      semana(kr); generarServicio(kr, { rehacer:true });
+      ok('SERVICIO 1 LIBRE: al llenar, cada agente libra un solo dia', sers.every(e => libresAuto(e, kr) <= 1), sers.map(e => fila(e, kr)).join(' | '));
+      /* B. con una lista que abre menos turnos que agentes (sin el 9-5): antes salian dos y tres libres */
+      S.config.servicio.prioridad = S.config.servicio.prioridad.filter(x => (turno(x.turnoId) || {}).corto !== '9-5');
+      olvidarLibresServicio();
+      delete S.semanas[kr]; semana(kr); generarServicio(kr, { rehacer:true });
+      ok('SERVICIO 1 LIBRE: aunque la lista abra menos turnos que agentes, nadie pasa de un dia libre',
+         sers.every(e => libresAuto(e, kr) <= 1), sers.map(e => fila(e, kr)).join(' | '));
+      ok('SERVICIO 1 LIBRE: y los principales siguen cubiertos',
+         [0,1,2,3,4,5,6].every(d => prioridadServicioDia(d).filter(x => x.clave).every(x => sers.some(e => { const c = celda(e.id, d, kr); return c && c.t === x.turnoId; }))));
+      /* C. Otra alternativa, las siete vueltas, con esa misma lista */
+      let bien = true;
+      for(let i = 0; i < 7; i++){ semana(kr).varSer = ((semana(kr).varSer || 0) + 1) % 7; generarServicio(kr, {}); if(!sers.every(e => libresAuto(e, kr) <= 1)) bien = false; }
+      ok('SERVICIO 1 LIBRE: Otra alternativa tampoco pasa de un dia libre (7 vueltas)', bien);
+      S.config.servicio.prioridad = JSON.parse(fotoPrio); olvidarLibresServicio();
+      /* D. con un libre puesto a mano, el reparto no le anade otro */
+      delete S.semanas[kr]; semana(kr);
+      S.semanas[kr].celdas[ck(sers[0].id, 2)] = { t:LIBRE, p:null, o:'manual', b:true };
+      generarServicio(kr, {});
+      ok('SERVICIO 1 LIBRE: con un libre a mano, Completar no le anade otro',
+         libresAuto(sers[0], kr) === 0 && esLibreReal(celda(sers[0].id, 2, kr)), fila(sers[0], kr));
+      /* E. y si tu le pones dos a mano, se respetan los dos */
+      S.semanas[kr].celdas[ck(sers[0].id, 3)] = { t:LIBRE, p:null, o:'manual', b:true };
+      generarServicio(kr, {});
+      ok('SERVICIO 1 LIBRE: dos libres puestos a mano se respetan',
+         esLibreReal(celda(sers[0].id, 2, kr)) && esLibreReal(celda(sers[0].id, 3, kr)), fila(sers[0], kr));
+    } finally {
+      S.config.servicio.prioridad = JSON.parse(fotoPrio); olvidarLibresServicio();
+      S.semanas = JSON.parse(fotoSemanas); SEMANA = guardaSem;
     }
   })();
 
