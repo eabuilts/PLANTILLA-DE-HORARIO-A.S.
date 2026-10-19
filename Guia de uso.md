@@ -224,7 +224,7 @@ Antes de pulsar te dice la cuenta del día:
 
 Y si no dan, también te lo dice, para que decidas con el dato delante.
 
-**Al asignarla se rehace el día entero.** Ejemplo real: YUNIOR llevaba el 7-3 en Hertz; al ponerle media tanda, **ALAN pasó al 7-3** e **ISAAC salió de sombra para el 10-6**. Cero puestos sin cubrir.
+**Al asignarla solo cambia esa casilla.** El puesto que esa persona llevaba queda libre hasta que lo cubras tú o pulses **Otra alternativa**.
 
 Cuenta **4 horas** en el total de la semana, no 8.
 
@@ -355,7 +355,7 @@ Con **cuatro agentes que puedan cubrir** más la sombra, la semana sale limpia: 
 
 **Puedes sacarlo de sombra tú, cuando quieras.** En su casilla, arriba del todo, está **Sacarlo de sombra para el 10-6**. Ese día deja de acompañar y **cubre el puesto de Dollar Thrifty como un agente más**: cuenta como cobertura de verdad. El resto de la semana sigue de sombra.
 
-Puedes hacerlo **los días que quieras y las veces que quieras**. Al pulsarlo, el día se rehace solo: como entra una mano más, los demás se recolocan —y a veces ya no hace falta el 11-7 de la Terminal B—. Queda marcado como puesto por ti, así que **«Otra alternativa» no lo pisa**. Para deshacerlo, **Devolverlo al acompañamiento**.
+Puedes hacerlo **los días que quieras y las veces que quieras**. Al pulsarlo solo cambia su casilla; si quieres que los demás se recoloquen alrededor, pulsa **Otra alternativa**. Queda marcado como puesto por ti, así que **«Otra alternativa» no lo pisa**. Para deshacerlo, **Devolverlo al acompañamiento**.
 
 El reparto automático también lo saca solo cuando falta una mano; esto es para cuando lo decides tú.
 
@@ -492,7 +492,7 @@ El botón sale apagado si ese horario está en blanco.
 
 **Limpiar o vaciar** también respeta la independencia: además de las tres opciones de siempre (quitar lo del sistema, soltar lo fijado, dejar la semana en blanco), tienes **Vaciar solo _[equipo]_** para borrar un horario sin tocar los otros dos.
 
-Si prefieres que el horario de renta se complete solo en cuanto asignas algo a mano, activa la casilla correspondiente en Ajustes.
+Al asignar a mano nunca se completa el resto de la semana: lo completas tú con los botones de cada panel.
 
 ## Los días libres de los agentes de renta
 
@@ -776,3 +776,11 @@ Lo mismo vale para **Exportar** (PDF, imagen y hoja de cálculo) y para **Imprim
 - Lleva feriados, vacaciones, licencias médicas y permisos. Lo que no lleva es el cálculo de cuántos días de vacaciones le quedan a cada uno: eso va en la otra aplicación que harás.
 - Es solo para el supervisor. La vista para empleados queda para más adelante.
 - Sin la nube conectada, los datos viven solo en ese navegador. Descarga la copia de seguridad de vez en cuando desde Ajustes.
+### Asignar a mano: solo cambia la casilla que tocas
+
+Desde el 19 de octubre de 2026, en los tres horarios —Agentes de Renta, Agentes de Servicio y Gerencia—, **cuando le pones a alguien un turno o un día libre desde su casilla, solo cambia esa casilla**. Nadie más recibe turnos ni días libres por su cuenta, ni al asignar ni al volver a abrir la semana.
+
+- Para rellenar el resto, pulsa tú **Llenar este horario**, **Completar lo que falta** u **Otra alternativa** en el panel de cada equipo.
+- Al abrir una semana, la app solo **quita** lo que rompe una regla —un turno en un día de vacaciones o en el día libre fijo, un turno dado de baja— y lo apunta en el historial. No pone nada en su lugar.
+- **Sacar a ISAAC de sombra** y la **media tanda** también cambian solo esa casilla. Si quieres que el día se reparta alrededor, pulsa **Otra alternativa**.
+- Siguen rehaciendo semanas, porque son decisiones de semana y no de una casilla: **Quién libra 2 días**, cambiar el turno de una semana en el calendario y registrar **vacaciones y permisos**.

@@ -7666,8 +7666,7 @@ function pantallaAjustes(){
       campo('Visitas a la Terminal B por persona y semana','cfg_objB','number',c.objetivoB) +
       campo('Tope de visitas a la Terminal B','cfg_maxB','number',c.maxB) +
       campo('Horas minimas de descanso entre turnos','cfg_desc','number',c.descansoMin) +
-      '<label class="chk"><input type="checkbox" id="cfg_auto"' + (c.autocompletar?' checked':'') + '> Completar el resto de la semana en cuanto asigno algo a mano</label>' +
-      '<p class="tiny muted" style="margin:-4px 0 8px">Apagado: vas poniendo turnos a mano los que quieras y luego pulsas <b>Completar lo que falta</b> u <b>Otra alternativa</b>. Encendido: se rellena solo en cuanto asignas el primero.</p>' +
+      '<p class="tiny muted" style="margin:0 0 8px">Al asignar a mano solo cambia la casilla que tocas. Para rellenar el resto, pulsa <b>Llenar</b>, <b>Completar lo que falta</b> u <b>Otra alternativa</b> en el horario.</p>' +
       '<label class="chk"><input type="checkbox" id="cfg_sindesc"' + (c.permitirSinDescanso?' checked':'') + '> Permitir turnos sin el descanso minimo</label>' +
     '</div></div>' +
     '<button class="btn" onclick="guardarConfig()">Guardar</button></div>';
@@ -8688,7 +8687,7 @@ function guardarConfig(){
   c.maxB = num('cfg_maxB', 3, 1, 7);
   c.descansoMin = Math.min(24, Math.max(0, Number((el('cfg_desc')||{}).value) || 0));
   if(c.maxB < c.objetivoB) c.maxB = c.objetivoB;
-  c.autocompletar = el('cfg_auto').checked;
+  c.autocompletar = false;          // al asignar a mano nunca se rellena el resto
   c.permitirSinDescanso = el('cfg_sindesc').checked;
   bitacora('Se actualizo el reparto de dias libres y las reglas.');
   guardar(); render(); toast('Configuracion guardada');
@@ -9270,20 +9269,23 @@ function pantallaHorario(){
      completar en el momento: si no, la pantalla se abria llena de
      "puesto sin cubrir" por algo que no habias hecho tu. */
   decidirVista();
+  /* =================================================================
+     ASIGNACION LIMPIA (19 de octubre de 2026)
+     El usuario arma los horarios tocando a cada empleado de uno en uno, y
+     pidio que al asignar un turno o un dia libre SOLO cambie esa casilla.
+     Antes, al redibujar, la app rellenaba los huecos de agentes de
+     servicio y de gerencia, y rehacia agentes de renta si habia limpiado
+     algo: se veian aparecer turnos y libres en filas que nadie habia
+     tocado. Ahora al abrir la semana solo se quita lo que rompe una regla
+     (vacaciones, dia libre fijo, turno dado de baja) y se dice. Nada se
+     rellena solo: para eso estan los botones Llenar, Completar lo que
+     falta y Otra alternativa de cada equipo.
+     ================================================================= */
   const arreglados = sanearSemana(SEMANA);
   let recompuesta = false;
   if(arreglados){
     bitacora('Se quitaron ' + arreglados + ' turno(s) que ya no encajaban con las reglas, en la semana del ' + fechaLarga(SEMANA) + '.');
-    if(semana(SEMANA).estado !== 'publicado'){
-      try { autocompletar(SEMANA); recompuesta = true; } catch(e){}
-    }
     guardar();
-  }
-  /* autocompletar solo mira el counter. Los huecos de supervisores y de
-     agentes de servicio se rellenan aqui, para que al pasar de una semana
-     a otra no queden filas a medias. */
-  if(semana(SEMANA).estado !== 'publicado'){
-    try { if(completarOtrosEquipos(SEMANA)) guardar(); } catch(e){}
   }
   const w = semana();
   const tipo = tipoSemana(SEMANA);
@@ -9418,7 +9420,7 @@ function pantallaHorario(){
    sigue con una copia vieja?". Sin un sello a la vista no hay forma de
    saberlo, y se pierde media tarde buscando el fallo donde no esta.
    ===================================================================== */
-const SELLO_VERSION = '2026-10-01-a';
+const SELLO_VERSION = '2026-10-19-a';
 
 let DIA_MOVIL = null;          // null = sin decidir, -1 = la semana, 0..6 = ese dia
 /* ¿La vista la eligio la persona o la decidio el ancho de la ventana?
@@ -10386,18 +10388,12 @@ function asignarRescate(empId, d){
   const c = celda(empId, d);
   if(c){ c.rescate = true; delete c.sombra; delete c.con; }
   cerrar();
-  toast('Fuera de sombra en el ' + t.corto + '. Recomponiendo el dia...');
-  setTimeout(function(){
-    let faltan = 0;
-    /* Se rehace desde lo que hay a mano: al entrar el como una mano mas,
-       los demas se recolocan y puede que ya no haga falta el 11-7. */
-    try { const ev = otraAlternativa(SEMANA); faltan = ev.eq.faltan; } catch(e){}
-    bitacora((empleado(empId)||{}).nombre + ' sale de sombra el ' +
-             fechaLarga(addDias(SEMANA, d)) + ' para cubrir el ' + t.corto + '.');
-    guardar(); render();
-    toast(faltan ? 'Puesto el ' + t.corto + ' &middot; quedan ' + faltan + ' puesto(s) sin cubrir'
-                 : 'Puesto el ' + t.corto + ' &middot; el dia quedo cubierto');
-  }, 60);
+  /* Solo esa casilla (ver ASIGNACION LIMPIA): los demas no se recolocan.
+     Si quieres que el dia se reparta alrededor, pulsa Otra alternativa. */
+  bitacora((empleado(empId)||{}).nombre + ' sale de sombra el ' +
+           fechaLarga(addDias(SEMANA, d)) + ' para cubrir el ' + t.corto + '.');
+  guardar(); render();
+  toast('Puesto el ' + t.corto + ' fuera de sombra');
 }
 /* Devolverlo al acompanamiento */
 function volverASombra(empId, d){
@@ -10449,21 +10445,12 @@ function asignarMediaTanda(empId, d, puestoId){
     toast('Ese dia lo tiene reservado en su ficha'); cerrar(); render(); return;
   }
   cerrar();
-  toast('Media tanda puesta. Recomponiendo el dia...');
-  setTimeout(function(){
-    let faltan = 0;
-    /* Se rehace la semana entera desde lo que pusiste a mano, no se
-       'completa' lo que falta. La diferencia importa: completar conserva
-       el reparto que ya habia, y aqui hace falta moverlo -que alguien
-       pase al puesto que suelta el de la media tanda, y que quien esta de
-       sombra salga a tapar el 10-6 si con eso cuadra el dia-. */
-    try { const ev = otraAlternativa(SEMANA); faltan = ev.eq.faltan; } catch(e){}
-    bitacora('Media tanda para ' + (empleado(empId)||{}).nombre + ' el ' +
-             fechaLarga(addDias(SEMANA, d)) + ', vispera de su ausencia.');
-    guardar(); render();
-    toast(faltan ? 'Media tanda puesta &middot; queda ' + faltan + ' puesto(s) sin cubrir ese dia'
-                 : 'Media tanda puesta &middot; el dia quedo cubierto');
-  }, 60);
+  /* Solo esa casilla (ver ASIGNACION LIMPIA): el puesto que soltaba queda
+     libre hasta que lo cubras tu o pulses Otra alternativa. */
+  bitacora('Media tanda para ' + (empleado(empId)||{}).nombre + ' el ' +
+           fechaLarga(addDias(SEMANA, d)) + ', vispera de su ausencia.');
+  guardar(); render();
+  toast('Media tanda puesta');
 }
 
 function asignarPuesto(empId, d, puestoId){
@@ -10477,14 +10464,9 @@ function asignar(empId, d, turnoId, puestoId){
     if(turnoId === null) ponerCelda(empId, d, null);
     else ponerCelda(empId, d, turnoId, puestoId, 'manual', true);
     cerrar();
-    if(S.config.autocompletar && turnoId !== null && equipoDe(empId) === 'rotativo'){
-      const ev = autocompletar(SEMANA);
-      render();
-      toast(ev.eq.faltan ? 'Listo. Quedan ' + ev.eq.faltan + ' puesto(s) sin cubrir' : 'Listo, el resto de la semana se lleno solo');
-    } else {
-      guardar(); render();
-      toast(turnoId === LIBRE ? 'Dia libre marcado' : 'Turno asignado. Sigue poniendo los que quieras.');
-    }
+    /* Solo esa casilla: el resto de la semana no se toca (ver ASIGNACION LIMPIA) */
+    guardar(); render();
+    toast(turnoId === LIBRE ? 'Dia libre marcado' : (turnoId === null ? 'Casilla vaciada' : 'Turno asignado'));
   };
   if(turnoId === null){ aplicar(); return; }
 
@@ -12594,6 +12576,66 @@ function pruebas(){
     }
     ok('DT 6: las semanas publicadas no cambian',
        JSON.stringify(Object.keys(S.semanas).filter(x => S.semanas[x].estado === 'publicado').sort().map(x => [x, S.semanas[x]])) === pubAntes);
+  })();
+
+  /* =================================================================
+     ASIGNACION LIMPIA (19 de octubre de 2026)
+     Asignar una casilla a mano -turno o dia libre- en cualquiera de los
+     tres horarios cambia esa casilla y ninguna otra, tambien despues de
+     redibujar la pantalla. Semana lejana; al final todo como estaba.
+     ================================================================= */
+  (function(){
+    const guardaSem = SEMANA, guardaPant = PANTALLA, fotoSemanas = JSON.stringify(S.semanas);
+    let kr = addDias(k, 9100);
+    for(let i = 0; i < 80 && (S.semanas[kr] || S.semanas[addDias(kr,-7)] || S.semanas[addDias(kr,7)]); i++) kr = addDias(kr, 7);
+    const cuenta = (kk) => { const w = S.semanas[kk]; const o = { rotativo:0, servicio:0, supervision:0 };
+      Object.keys((w && w.celdas) || {}).forEach(key => { const e = empleado(key.slice(0, key.lastIndexOf('_'))); if(e) o[equipoDe(e)]++; }); return o; };
+    const txt = (o) => 'renta ' + o.rotativo + ', servicio ' + o.servicio + ', gerencia ' + o.supervision;
+    try {
+      SEMANA = kr; PANTALLA = 'horario'; semana(kr);
+      const ren = plantilla('rotativo').find(e => !haceSombra(e)), ser = plantilla('servicio')[0], sup = plantilla('supervision')[0];
+      const tSer = turnosDe('servicio').find(t => t.corto === '7-3'), tSup = turnosDe('supervision')[0];
+      /* tres asignaciones sueltas, una por horario, por el camino de la casilla */
+      const pH = S.puestos.find(x => x.terminal === 'A' && /^hertz$/i.test(x.nombre || ''));
+      const tRen = S.turnos.find(t => t.corto === '7-3' && (t.equipos || []).indexOf('rotativo') >= 0);
+      if(ren && pH && tRen) asignar(ren.id, 1, tRen.id, pH.id);
+      if(ser && tSer) asignar(ser.id, 2, tSer.id, null);
+      if(sup && tSup) asignar(sup.id, 3, tSup.id, null);
+      render();                                         // redibujar no rellena nada
+      const c1 = cuenta(kr);
+      ok('Asignar a mano en los tres horarios cambia solo esas casillas, tambien al redibujar',
+         c1.rotativo === (ren ? 1 : 0) && c1.servicio === (ser && tSer ? 1 : 0) && c1.supervision === (sup && tSup ? 1 : 0), txt(c1));
+      /* un dia libre en servicio y en gerencia: tampoco rellena */
+      if(ser) asignar(ser.id, 4, LIBRE, null);
+      if(sup) asignar(sup.id, 5, LIBRE, null);
+      render();
+      const c2 = cuenta(kr);
+      ok('Un dia libre a mano en servicio y en gerencia no rellena el resto del equipo',
+         c2.servicio === c1.servicio + (ser ? 1 : 0) && c2.supervision === c1.supervision + (sup ? 1 : 0) && c2.rotativo === c1.rotativo, txt(c2));
+      /* sacar de sombra a mano y la media tanda: solo esa casilla */
+      const ent = plantilla('rotativo').find(e => haceSombra(e));
+      if(ent){ asignarRescate(ent.id, 0); render(); }
+      const c3 = cuenta(kr);
+      ok('Sacar de sombra a mano pone solo esa casilla y no rehace la semana',
+         !ent || c3.rotativo === c2.rotativo + 1, txt(c3));
+      const otro = plantilla('rotativo').find(e => !haceSombra(e) && e !== ren);
+      if(otro && turnoMediaTanda()){
+        S.ausencias = (S.ausencias || []).concat([{ id:'limpia1', empId:otro.id, tipo:'vacaciones', nota:'', desde:addDias(kr, 6), hasta:addDias(kr, 6) }]);
+        asignarMediaTanda(otro.id, 5, null); render();
+        const c4 = cuenta(kr);
+        S.ausencias = S.ausencias.filter(a => a.id !== 'limpia1');
+        /* +1 por la media tanda y +1 por el dia de vacaciones, que es una fecha y se marca sola */
+        ok('La media tanda pone solo esa casilla (y la vacacion, que es una fecha)', c4.rotativo === c3.rotativo + 2, txt(c4));
+      }
+      /* Y los botones siguen llenando cuando tu los pulsas */
+      generarServicio(kr, {}); generarSupervision(kr, {});
+      const c5 = cuenta(kr);
+      ok('Los botones de llenar siguen funcionando cuando se pulsan',
+         c5.servicio === plantilla('servicio').length * 7 && c5.supervision === plantilla('supervision').length * 7, txt(c5));
+    } finally {
+      S.semanas = JSON.parse(fotoSemanas);
+      SEMANA = guardaSem; PANTALLA = guardaPant;
+    }
   })();
 
   ok('Un turno de un equipo no se puede arrastrar al de otro',
