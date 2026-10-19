@@ -111,6 +111,10 @@ Lo mismo se puede hacer desde **Ajustes → Agentes de servicio**, en *Quién ha
 
 **El reparto nunca da más de un día libre.** Desde el 19 de octubre de 2026, al pulsar **Llenar este horario**, **Completar lo que falta** u **Otra alternativa**, ningún agente de servicio sale con más de un día libre puesto por el sistema. Si un día la lista abre menos turnos que agentes, el que sobra no se queda libre: hace un turno de servicio que nadie cubre ese día, respetando el descanso mínimo. Y si ya le marcaste un día libre a mano, el reparto no le añade otro. **El segundo día lo decides tú**, marcándolo a mano en su casilla. Vale igual con cualquier número de auxiliares: si hay más auxiliares trabajando que turnos de servicio distintos, se repite el turno que menos gente tenga ese día, y eso no se marca como conflicto. Dos en el mismo turno solo es conflicto si ese día quedaba algún turno de servicio sin nadie.
 
+**Y nunca libran dos el mismo día.** También desde el 19 de octubre de 2026, el reparto de servicio pone como mucho **una persona libre por día**, con los auxiliares que sean. Si quieres que el domingo, o cualquier otro día, libren dos o más, márcalos tú a mano: se respetan, y el reparto no añade a nadie más libre ese día. Los días que la ficha de alguien marca como no disponible cuentan como ese libre del día.
+
+Con más de 7 auxiliares, la semana no da para un libre automático para todos: siete días, uno por día. Los que no lo reciban aparecen en el aviso *"debería librar 1 día y libra 0"*, y su día libre lo pones tú a mano.
+
 La cuenta cierra sola: 3 agentes × 7 días son 21 días, menos 3 de descanso quedan **18 turnos**, que son exactamente los 14 de los dos principales más 4 de refuerzo. Los cuatro días de refuerzo caen en los días en que no libra nadie.
 
 Dos reglas acompañan al reparto:

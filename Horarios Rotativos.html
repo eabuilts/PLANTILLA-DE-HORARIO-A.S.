@@ -961,9 +961,14 @@ function patronLibresServicio(k){
   const tope = [];
   for(let d = 0; d < 7; d++){
     const hay = eq.filter(e => !ausenteEnDia(e.id, d, k) && e.diasDisponibles[d] !== false).length;
-    tope.push(Math.max(0, hay - nucleoServicioDia(d)));
+    /* Y nunca mas de UNA persona librando el mismo dia, con los agentes
+       que sean (pedido el 19 de octubre de 2026). Si quieres dos libres
+       el mismo dia, los pones tu a mano. */
+    tope.push(Math.min(1, Math.max(0, hay - nucleoServicioDia(d))));
   }
   const libran = [0,0,0,0,0,0,0];
+  /* quien ese dia no esta disponible por su ficha ya ocupa ese hueco */
+  eq.forEach(e => { for(let d = 0; d < 7; d++) if(!ausenteEnDia(e.id, d, k) && e.diasDisponibles[d] === false) libran[d]++; });
   const out = {};
   eq.forEach(e => { out[e.id] = []; });
 
@@ -6482,6 +6487,44 @@ function limitarLibresServicio(k){
       cambiados++;
     }
   }
+  /* ---- Y como mucho UNA persona libre por dia, puesta por el reparto ----
+     Lo que pusiste a mano, y los dias que la ficha marca como no
+     disponibles, cuentan pero no se tocan: si ya hay uno de esos, el
+     reparto no pone a nadie mas libre ese dia. */
+  for(let d = 0; d < 7; d++){
+    let fijos = 0; const autos = [];
+    eq.forEach(e => {
+      const c = celda(e.id, d, k);
+      if(!c || c.t !== LIBRE || esAusencia(c)) return;
+      if(c.o === 'manual' || c.b || diaReservado(e.id, d, k)) fijos++; else autos.push(e);
+    });
+    const caben = Math.max(0, 1 - fijos);
+    if(autos.length <= caben) continue;
+    /* se queda el libre que marca el plan, si lo hay */
+    autos.sort((a, b) => ((plan[b.id] || []).indexOf(d) >= 0 ? 1 : 0) - ((plan[a.id] || []).indexOf(d) >= 0 ? 1 : 0));
+    autos.slice(caben).forEach(e => {
+      const hechos = eq.map(x => turnoDe(celda(x.id, d, k))).filter(Boolean).map(t => t.id);
+      const quedan = hechos.slice(), lista = [];
+      prioridadServicioDia(d).forEach(x => { const i = quedan.indexOf(x.turnoId); if(i >= 0) quedan.splice(i, 1); else lista.push(x.turnoId); });
+      turnosDe('servicio').forEach(t => { if(hechos.indexOf(t.id) < 0 && lista.indexOf(t.id) < 0) lista.push(t.id); });
+      const veces = (tid) => eq.filter(x => { const c = celda(x.id, d, k); return c && c.t === tid; }).length;
+      const descansa = (tid) => {
+        const t = turno(tid), a = turnoDe(vecino(e, d - 1)), b = turnoDe(vecino(e, d + 1));
+        return (!a || descansoEntre(a, t) >= minD) && (!b || descansoEntre(t, b) >= minD);
+      };
+      let vale = lista.filter(tid => (e.turnosProhibidos || []).indexOf(tid) < 0);
+      if(!vale.some(descansa)){
+        const rep = prioridadServicioDia(d).map(x => x.turnoId).concat(turnosDe('servicio').map(t => t.id))
+          .filter((tid, i, a) => a.indexOf(tid) === i && (e.turnosProhibidos || []).indexOf(tid) < 0)
+          .sort((a, b) => veces(a) - veces(b));
+        vale = vale.concat(rep.filter(tid => vale.indexOf(tid) < 0));
+      }
+      const tid = vale.find(descansa) || vale[0];
+      if(!tid) return;
+      ponerCelda(e.id, d, tid, (S.config.servicio || {}).puestoId || null, 'auto', false, k);
+      cambiados++;
+    });
+  }
   if(cambiados) olvidarLibresServicio();
   return cambiados;
 }
@@ -9524,7 +9567,7 @@ function pantallaHorario(){
    sigue con una copia vieja?". Sin un sello a la vista no hay forma de
    saberlo, y se pierde media tarde buscando el fallo donde no esta.
    ===================================================================== */
-const SELLO_VERSION = '2026-10-19-d';
+const SELLO_VERSION = '2026-10-19-e';
 
 let DIA_MOVIL = null;          // null = sin decidir, -1 = la semana, 0..6 = ese dia
 /* ¿La vista la eligio la persona o la decidio el ancho de la ventana?
@@ -12821,6 +12864,53 @@ function pruebas(){
          mal === 0, mal ? det.join(', ') : 'ninguno');
     } finally {
       S.empleados = S.empleados.filter(e => !/^PRUEBA_REN_/.test(e.nombre || '')); olvidarTodo();
+      S.semanas = JSON.parse(fotoSemanas); SEMANA = guardaSem;
+    }
+  })();
+
+  /* =================================================================
+     SERVICIO: COMO MUCHO UNA PERSONA LIBRE POR DIA (19 de octubre de 2026)
+     Con los agentes que sean. Lo que pongas a mano se respeta.
+     ================================================================= */
+  (function(){
+    const guardaSem = SEMANA, fotoSemanas = JSON.stringify(S.semanas);
+    const libresDia = (kk, d) => { let a = 0, m = 0; plantilla('servicio').forEach(e => { const c = celda(e.id, d, kk);
+      if(c && c.t === LIBRE && !esAusencia(c)){ if(c.o === 'manual' || c.b) m++; else a++; } }); return { a, m }; };
+    const resumen = (kk) => [0,1,2,3,4,5,6].map(d => DIAS_CORTO[d] + ':' + libresDia(kk, d).a).join(' ');
+    const extra = [];
+    try {
+      let kr = addDias(k, 11200);
+      for(let i = 0; i < 80 && (S.semanas[kr] || S.semanas[addDias(kr,-7)] || S.semanas[addDias(kr,7)]); i++) kr = addDias(kr, 7);
+      SEMANA = kr;
+      for(const n of [0, 7, 20]){
+        while(extra.length < n){ const e = empleadoNuevo('PRUEBA_DIA_' + (extra.length + 1), 'servicio'); S.empleados.push(e); extra.push(e); }
+        olvidarTodo(); delete S.semanas[kr]; semana(kr);
+        generarServicio(kr, { rehacer:true });
+        const sers = plantilla('servicio');
+        let porDia = true, porPersona = true;
+        for(let d = 0; d < 7; d++) if(libresDia(kr, d).a > 1) porDia = false;
+        sers.forEach(e => { let a = 0; for(let d = 0; d < 7; d++){ const c = celda(e.id, d, kr); if(c && c.t === LIBRE && !esAusencia(c) && !(c.o === 'manual' || c.b)) a++; } if(a > 1) porPersona = false; });
+        ok('SERVICIO 1 POR DIA: con ' + sers.length + ' agentes nunca libran dos el mismo dia, ni nadie dos dias',
+           porDia && porPersona, 'libres por dia ' + resumen(kr));
+      }
+      /* con libres a mano: se respetan, y el reparto no pone otro ese dia */
+      S.empleados = S.empleados.filter(e => extra.indexOf(e) < 0); extra.length = 0; olvidarTodo();
+      delete S.semanas[kr]; semana(kr);
+      const sers = plantilla('servicio');
+      S.semanas[kr].celdas[ck(sers[0].id, 6)] = { t:LIBRE, p:null, o:'manual', b:true };
+      S.semanas[kr].celdas[ck(sers[1].id, 6)] = { t:LIBRE, p:null, o:'manual', b:true };
+      generarServicio(kr, {});
+      const dom = libresDia(kr, 6);
+      ok('SERVICIO 1 POR DIA: dos libres a mano el mismo domingo se respetan y el reparto no anade otro',
+         dom.m === 2 && dom.a === 0, 'domingo: ' + dom.m + ' a mano, ' + dom.a + ' del reparto');
+      delete S.semanas[kr]; semana(kr);
+      S.semanas[kr].celdas[ck(sers[0].id, 3)] = { t:LIBRE, p:null, o:'manual', b:true };
+      for(let i = 0; i < 7; i++){ S.semanas[kr].varSer = i; generarServicio(kr, {}); }
+      const jue = libresDia(kr, 3);
+      ok('SERVICIO 1 POR DIA: con un libre a mano el jueves, Otra alternativa no pone otro libre ese dia',
+         jue.m === 1 && jue.a === 0, 'jueves: ' + jue.m + ' a mano, ' + jue.a + ' del reparto');
+    } finally {
+      S.empleados = S.empleados.filter(e => !/^PRUEBA_DIA_/.test(e.nombre || '')); olvidarTodo();
       S.semanas = JSON.parse(fotoSemanas); SEMANA = guardaSem;
     }
   })();
